@@ -8,6 +8,61 @@ const router = useRouter()
 const logFile = ref(null)
 const logPattern = ref('^(\\S+) - - \\[(.*?)\\] "(.*?)" (\\d+) (\\d+) "(.*?)" "(.*?)" "(.*?)" "([\\d\\.]+)"$')
 const schemaFields = ref('ip_address:ID,timestamp:TEXT,endpoint:TEXT,status:NUMERIC,size:NUMERIC,referer:TEXT,user_agent:TEXT,request_ip:ID,response_time:NUMERIC')
+const formatFields = ref('def format_fields(match, schema_fields):\n' +
+    '    line_map = {}\n' +
+    '    for i, field in enumerate(schema_fields):\n' +
+    '        field_value = match.group(i + 1)\n' +
+    '        if schema_fields[field] == "NUMERIC":\n' +
+    '            # parsed_lines.append({field: int(field_value)})\n' +
+    '            # 尝试转为 int,如果失败，转为 float\n' +
+    '            try:\n' +
+    '                field_value = int(field_value)\n' +
+    '                line_map[field] = field_value\n' +
+    '            except ValueError:\n' +
+    '                field_value = float(field_value)\n' +
+    '                field_value = int(field_value * 1000)\n' +
+    '                line_map[field] = field_value\n' +
+    '        else:\n' +
+    '            line_map[field] = field_value\n' +
+    '    return line_map\n')
+const parse_example = ref(
+'project-api:'+
+    '\n\\[(.*?)\\] (\\d{4}/\\d{2}/\\d{2} \\d{2}:\\d{2}:\\d{2}) (\\d{2}/\\d{2} - \\d{2}:\\d{2}:\\d{2}) (\\d{3}) (\\d{1,}.\\d{1,})(m?s) (\\S+) (\\S+) (.*$)' +
+    '\nlog_level:ID,log_time1:TEXT,log_time2:TEXT,status:NUMERIC,response_time:NUMERIC,request_ip:ID,method:ID,endpoint:TEXT' +
+    '\ndef format_fields(match, schema_fields):\n' +
+    '    line_map = {}\n' +
+    '    for i, field in enumerate(schema_fields):\n' +
+    '        field_value = match.group(i + 1)\n' +
+    '        if schema_fields[field] == "NUMERIC":\n' +
+    '            # parsed_lines.append({field: int(field_value)})\n' +
+    '            # 尝试转为 int,如果失败，转为 float\n' +
+    '            if field == "response_time":\n' +
+    '                # 带有单位，比如 1.23ms 1.23s 1min2s\n' +
+    '                if "ms" in field_value:\n' +
+    '                    field_value = field_value.replace("ms", "")\n' +
+    '                    field_value = float(field_value)\n' +
+    '                    field_value = int(field_value)\n' +
+    '                elif "s" in field_value:\n' +
+    '                    field_value = field_value.replace("s", "")\n' +
+    '                    field_value = float(field_value)\n' +
+    '                    field_value = int(field_value * 1000)\n' +
+    '                elif "min" in field_value:\n' +
+    '                    field_value = field_value.replace("min", "")\n' +
+    '                    field_value = field_value.split("s")\n' +
+    '                    field_value = int(field_value[0]) * 60 + int(field_value[1])\n' +
+    '                line_map[field] = field_value\n' +
+    '            else:\n' +
+    '                try:\n' +
+    '                    field_value = int(field_value)\n' +
+    '                    line_map[field] = field_value\n' +
+    '                except ValueError:\n' +
+    '                    field_value = float(field_value)\n' +
+    '                    field_value = int(field_value * 1000)\n' +
+    '                    line_map[field] = field_value\n' +
+    '        else:\n' +
+    '            line_map[field] = field_value\n' +
+    '    return line_map\n'
+)
 const md5Hash = ref('')
 const first100Parsed = ref(null)
 const error = ref(null)
@@ -43,6 +98,7 @@ const uploadLogFile = async () => {
   formData.append('logfile', logFile.value)
   formData.append('log_pattern', logPattern.value)
   formData.append('fields', schemaFields.value)
+  formData.append('format_fields', formatFields.value)
 
   try {
     const response = await axios.post('/api/upload', formData, {
@@ -72,6 +128,7 @@ const confirmParse = async () => {
   formData.append('md5', md5Hash.value)
   formData.append('log_pattern', logPattern.value)
   formData.append('fields', schemaFields.value)
+  formData.append('format_fields', formatFields.value)
 
   try {
     const response = await axios.post('/api/confirm', formData)
@@ -101,7 +158,14 @@ const confirmParse = async () => {
     <input type="file" @change="handleFileUpload" />
     <input type="text" v-model="logPattern" placeholder="Log Pattern" />
     <input type="text" v-model="schemaFields" placeholder="Schema Fields" />
+    <textarea class="format-field-code" v-model="formatFields" placeholder="Format Fields Function" />
     <button @click="uploadLogFile">Upload</button>
+    <div>
+      <a href="https://regex101.com/" target="_blank">正则表达式网站</a>
+      <pre>
+        {{ parse_example }}
+      </pre>
+    </div>
 
     <div v-if="error" class="error">
       <pre>{{ error }}</pre>
@@ -133,6 +197,11 @@ input {
   display: block;
   width: 100%;
   height: 26px;
+  margin-bottom: 10px;
+}
+.format-field-code {
+  height: 200px;
+  width: 100%;
   margin-bottom: 10px;
 }
 </style>
